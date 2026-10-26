@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qaptiva-mbl"
+version = "0.1.0"
+description = "Reproducible Imbrie and random-field XXZ dynamics: Qaptiva AnalogQPU and independent ED benchmarking"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+keywords = ["many-body localization", "Imbrie", "XXZ", "Qaptiva", "exact diagonalization"]
+authors = [{name = "qaptiva-mbl contributors"}]
+dependencies = ["numpy>=1.24", "scipy>=1.10", "matplotlib>=3.7"]
+
+[project.optional-dependencies]
+notebook = ["notebook>=7", "ipykernel>=6"]
+test = ["pytest>=7"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

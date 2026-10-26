@@ -1,0 +1,15 @@
+# Generated simulations and local secrets
+runs/
+*.npz
+*.pyc
+__pycache__/
+.pytest_cache/
+.ipynb_checkpoints/
+.env
+.env.*
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.DS_Store

@@ -10,7 +10,7 @@ A small Python package designed for researchers working on the Imbrie (random tr
 - User-selected parameters, disorder seed, and Néel or random **Z-basis product states**.
 - Qaptiva `AnalogQPU` jobs; saved job IDs and full-precision disorder/initial-state arrays.
 - Adaptive `error_control=True` (tolerances only) **or** fixed `error_control=False` (required `nsteps`).
-- Independent manual NumPy/SciPy ED, with dense diagonalization or sparse Krylov propagation. **QuSpin is not needed.**
+- Independent manual NumPy/SciPy ED, with dense diagonalization or sparse Krylov propagation.
 - `C_j(t) = s_j <Z_j(t)>`, the site average, and QPU-vs-ED numerical errors.
 - Retrieve once, then plot/replot without connecting to Qaptiva.
 

@@ -1,0 +1,273 @@
+\documentclass[10pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage[margin=20mm,headheight=14pt,headsep=11pt,footskip=13mm]{geometry}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{booktabs,tabularx,array}
+\usepackage{xcolor}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{needspace}
+
+\definecolor{ink}{HTML}{172B47}
+\definecolor{accent}{HTML}{16647B}
+\definecolor{muted}{HTML}{576779}
+\definecolor{pale}{HTML}{F2F6F8}
+\definecolor{rulegray}{HTML}{D8E0E5}
+\hypersetup{colorlinks=true,urlcolor=accent,linkcolor=accent,pdftitle={qaptiva-mbl User Guide},pdfauthor={qaptiva-mbl contributors},pdfsubject={AnalogQPU and exact diagonalization for disordered spin chains}}
+\titleformat{\section}{\large\sffamily\bfseries\color{ink}}{\thesection}{0.65em}{}
+\titleformat{\subsection}{\normalsize\sffamily\bfseries\color{accent}}{\thesubsection}{0.55em}{}
+\titlespacing*{\section}{0pt}{10pt}{5pt}
+\titlespacing*{\subsection}{0pt}{7pt}{3pt}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{4pt}
+\renewcommand{\arraystretch}{1.18}
+\setlist[itemize]{topsep=2pt,itemsep=2pt,parsep=0pt,leftmargin=*}
+\setlist[enumerate]{topsep=2pt,itemsep=2pt,parsep=0pt,leftmargin=*}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\scriptsize\sffamily\bfseries\color{accent} QAPTIVA-MBL}
+\fancyhead[R]{\scriptsize\sffamily\color{muted} RESEARCH USER GUIDE}
+\fancyfoot[L]{\scriptsize\sffamily\color{muted} Version 0.1.0 \;\textbar\; October 2026}
+\fancyfoot[R]{\scriptsize\sffamily\color{muted} \thepage}
+\renewcommand{\headrulewidth}{0.35pt}
+\renewcommand{\footrulewidth}{0pt}
+\lstdefinestyle{clean}{
+  language=Python,basicstyle=\ttfamily\footnotesize,backgroundcolor=\color{pale},
+  frame=single,framerule=0.3pt,rulecolor=\color{rulegray},
+  numbers=none,xleftmargin=5pt,xrightmargin=5pt,framexleftmargin=5pt,
+  framexrightmargin=5pt,breaklines=true,showstringspaces=false,
+  columns=fullflexible,keepspaces=true,aboveskip=5pt,belowskip=7pt,
+  keywordstyle=\color{accent}\bfseries,commentstyle=\color{muted},
+  stringstyle=\color{ink}
+}
+\lstset{style=clean}
+\newcommand{\ket}[1]{\lvert #1 \rangle}
+\newcommand{\bra}[1]{\langle #1 \rvert}
+\newcommand{\Udist}{\mathcal U}
+\newcommand{\Bonds}{\mathcal B}
+\newcommand{\Cq}{C^{\mathrm{QPU}}}
+\newcommand{\Ce}{C^{\mathrm{ED}}}
+\newcommand{\paulix}{\sigma^{x}}
+\newcommand{\pauliz}{\sigma^{z}}
+
+\begin{document}
+\begin{center}
+{\fontsize{22}{26}\selectfont\sffamily\bfseries\color{ink} qaptiva-mbl}\\[5pt]
+{\large\sffamily\color{accent} Analog spin-chain dynamics and ED benchmarking}\\[8pt]
+{\normalsize\color{muted} Minimal user guide \quad\textbar\quad v0.1.0 \quad\textbar\quad October 2026}
+\end{center}
+\vspace{4pt}{\color{rulegray}\hrule height 0.7pt}\vspace{10pt}
+
+\section{Purpose and scope}
+This package studies real-time dynamics in the \textbf{Imbrie} and \textbf{random-field XXZ} chains. A user selects physical parameters, boundary conditions and an initial product state; the package preserves the exact disorder realization, runs a Qaptiva \texttt{AnalogQPU} job, retrieves site-resolved observables and optionally compares the result against independent \textbf{exact diagonalization (ED)} using NumPy/SciPy.
+
+\begin{tabularx}{\textwidth}{@{}>{\bfseries}p{38mm}X@{}}
+\toprule
+User setting & Available choices \\
+\midrule
+Model & \texttt{imbrie} or \texttt{xxz} \\
+Geometry & Chain length $L$; \texttt{obc} or \texttt{pbc} \\
+Initial state & N\'eel state or random $Z$-basis product state \\
+Disorder & User-supplied seed and model couplings \\
+QPU integration & Adaptive error control or a fixed number of steps \\
+Outputs & Local autocorrelators, site average, ED comparison and error plots \\
+\bottomrule
+\end{tabularx}
+
+The initial release supports \emph{one disorder realization per run}. There is no automatic disorder averaging, entanglement calculation or $U(1)$ symmetry-sector reduction.
+
+\section{Hamiltonians and normalization}
+Sites are labeled $j=0,1,\ldots,L-1$, and we set $\hbar=1$. Let $X_j=\sigma_j^x$, $Y_j=\sigma_j^y$, and $Z_j=\sigma_j^z$ be Pauli operators. Neighbor pairs are
+\begin{equation}
+\Bonds_{\mathrm{OBC}}=\{(j,j+1)\mid 0\le j<L-1\},\qquad
+\Bonds_{\mathrm{PBC}}=\Bonds_{\mathrm{OBC}}\cup\{(L-1,0)\}.
+\end{equation}
+OBC requires $L\ge2$; PBC requires $L\ge3$ in this implementation.
+
+\subsection{Imbrie model: Pauli convention}
+\begin{equation}
+\boxed{H_{\mathrm I}=\sum_{(i,j)\in\Bonds}\Delta_{ij}Z_iZ_j
++\sum_{j=0}^{L-1}\big(h_jZ_j+\Gamma X_j\big).}
+\end{equation}
+The bond couplings and longitudinal fields are independent draws:
+\begin{equation}
+\Delta_{ij}\sim\Udist(\Delta_{\min},\Delta_{\max}),\qquad
+h_j\sim\Udist(-h_0,h_0).
+\end{equation}
+The Hamiltonian uses Pauli matrices \emph{directly}, without extra factors of $1/2$. Configuration keys: \texttt{gamma}, \texttt{delta\_min}, \texttt{delta\_max}, \texttt{h0}.
+
+\subsection{Random-field XXZ: spin-\texorpdfstring{$\tfrac12$}{1/2} convention}
+With $S_j^\alpha=\sigma_j^\alpha/2$ and $h_j\sim\Udist(-h_0,h_0)$,
+\begin{align}
+H_{\mathrm{XXZ}}={}&\sum_{(i,j)\in\Bonds}\!\big[J_{xy}(S_i^x S_j^x+S_i^y S_j^y)+J_z S_i^zS_j^z\big]
++\sum_jh_jS_j^z \\[-2pt]
+={}&\sum_{(i,j)\in\Bonds}\!\left[\frac{J_{xy}}{4}(X_iX_j+Y_iY_j)
++\frac{J_z}{4}Z_iZ_j\right]+\frac12\sum_jh_jZ_j.\notag
+\end{align}
+The \emph{second line} specifies the exact Pauli coefficients used for both solvers. Configuration keys: \texttt{jxy}, \texttt{jz}, \texttt{h0}.
+
+\clearpage
+\section{Initial states and measured observables}
+The package prepares a product eigenstate of all $Z_j$,
+\begin{equation}
+\ket{\psi_0}=\ket{s_0,s_1,\ldots,s_{L-1}},\qquad
+Z_j\ket{\psi_0}=s_j\ket{\psi_0},\qquad s_j\in\{+1,-1\}.
+\end{equation}
+\begin{itemize}
+\item \textbf{N\'eel:} \texttt{initial\_state="neel"}, $s_j=(-1)^j$.
+\item \textbf{Random:} \texttt{initial\_state="random"}, independent $s_j=\pm1$.
+\end{itemize}
+In the Qaptiva input bitstring, $s_j=+1$ maps to \texttt{0} and $s_j=-1$ to \texttt{1}. \textbf{Site 0 is the leftmost bit.} Independent deterministic pseudorandom streams separate Hamiltonian disorder from random-state selection.
+
+For a time-independent Hamiltonian, $\ket{\psi(t)}=e^{-iHt}\ket{\psi_0}$. Define $Z_j(t)=e^{iHt}Z_je^{-iHt}$. The product-state site-resolved autocorrelator is
+\begin{equation}
+\boxed{C_j(t)=\bra{\psi_0}Z_j(t)Z_j\ket{\psi_0}
+=s_j\bra{\psi(t)}Z_j\ket{\psi(t)},}
+\qquad
+\boxed{C(t)=\frac1L\sum_{j=0}^{L-1}C_j(t).}
+\end{equation}
+The QPU job measures unweighted local magnetizations $\langle Z_j(t)\rangle$. After retrieval, the package multiplies each site by the \emph{stored} initial spin $s_j$. For ideal unitary dynamics $C_j(0)=1$.
+
+\textbf{Interpretation:} for one product state, $C_j(t)$ is \emph{not} the infinite-temperature trace correlation $2^{-L}\operatorname{Tr}[Z_j(t)Z_j]$; the latter requires a trace or suitable state averaging.
+
+\section{Solver settings: adaptive or fixed-step}
+The \texttt{RunConfig} constructor enforces \textbf{mutually exclusive} integration settings:
+
+\begin{tabularx}{\textwidth}{@{}p{30mm}X@{}}
+\toprule
+\textbf{Adaptive} & \texttt{error\_control=True}, \texttt{nsteps=None}; provide positive \texttt{abs\_tol} and \texttt{rel\_tol}. Qaptiva selects internal steps through its adaptive Dormand--Prince Runge--Kutta (DP5) method. \\
+\midrule
+\textbf{Fixed steps} & \texttt{error\_control=False}; supply a positive integer \texttt{nsteps}. Adaptive tolerances are not forwarded to the remote solver. \\
+\bottomrule
+\end{tabularx}
+
+\begin{lstlisting}
+# Adaptive (default): do not specify nsteps
+error_control=True, nsteps=None, abs_tol=1e-8, rel_tol=1e-8
+
+# Fixed-step alternative
+error_control=False, nsteps=1000
+\end{lstlisting}
+
+The \emph{internal integration steps} are not the same as the \emph{returned observation times}. The package always takes timestamps from the QPU result. The \texttt{use\_gpu} setting controls the backend's GPU option where available.
+
+\section{Notebook as the main interface}
+Run \texttt{notebooks/MBL\_Simulation.ipynb}. Its cells perform configuration, sample preparation, optional submission, optional retrieval, ED evolution, plotting and comparison. The remote cells start \emph{disabled}; enabling them requires a configured Qaptiva installation.
+
+\section{Installation}
+Requires \textbf{Python 3.10+}, NumPy, SciPy and Matplotlib. Run these commands from the repository root:
+\begin{lstlisting}[language=bash]
+python -m pip install -e ".[notebook,test]"
+python -m pytest -q
+jupyter notebook notebooks/MBL_Simulation.ipynb
+\end{lstlisting}
+The Qaptiva/QLMaaS modules \texttt{qat} and \texttt{qlmaas}, together with authenticated server access, are required only for remote submission/retrieval; they are not bundled in this repository. ED-only workflows run locally.
+
+\clearpage
+\section{Prepare, submit and retrieve}
+Use the notebook, or call the public API:
+\begin{lstlisting}
+from qaptiva_mbl import RunConfig, prepare_run
+from qaptiva_mbl import submit_run, retrieve_run
+
+cfg = RunConfig(
+    model="imbrie", L=8, boundary="pbc", seed=12345,
+    initial_state="neel", gamma=1.0,
+    delta_min=0.8, delta_max=1.2, h0=3.5,
+    tmax=100.0, error_control=True, nsteps=None,
+    abs_tol=1e-8, rel_tol=1e-8, use_gpu=False,
+)
+run_dir = prepare_run(cfg, root="runs")
+job_id = submit_run(run_dir)   # requires Qaptiva access
+print(job_id)
+
+# Retrieve now or in a later session from the same run_dir.
+times, C_qpu = retrieve_run(run_dir, host="YOUR-QLMAAS-HOST")
+\end{lstlisting}
+
+For the XXZ chain, change \texttt{model="xxz"} and specify \texttt{jxy} and \texttt{jz}. The package persists the random fields, Imbrie bonds (if present), initial spins, parameters and remote job ID. It never needs to redraw a disorder sample at retrieval time.
+
+\section{Independent manual ED}
+ED constructs the same spin Hamiltonian as a sparse matrix in the \emph{full} $2^L$-dimensional basis, without using Qaptiva's matrix constructors. The time evolution uses
+\begin{equation}
+\ket{\psi(t)}=e^{-iHt}\ket{\psi_0}.
+\end{equation}
+The \texttt{dense} method diagonalizes $H$ once, while \texttt{krylov} applies sparse matrix exponentials. With \texttt{method="auto"}, dense ED is used for $L\le9$ and Krylov for larger $L$. The default \texttt{max\_L=12} safety limit can be raised explicitly, at increased computational cost.
+
+\begin{lstlisting}
+from qaptiva_mbl import run_ed, compare_run
+
+# Reuse the exact QPU timestamps, saved disorder and initial state.
+times, C_ed = run_ed(run_dir, max_L=12)
+metrics = compare_run(run_dir)
+print(metrics["global_max_absolute_error"])
+\end{lstlisting}
+
+For \textbf{ED without Qaptiva}, prepare a run and supply a time array:
+\begin{lstlisting}
+import numpy as np
+from qaptiva_mbl import RunConfig, prepare_run, run_ed
+run_dir = prepare_run(RunConfig(model="xxz", L=8))
+times, C_ed = run_ed(run_dir, times=np.linspace(0, 100, 201))
+\end{lstlisting}
+
+\clearpage
+\section{Quantifying the ED--AnalogQPU difference}
+For the \emph{same} Hamiltonian realization, initial state and returned timestamps $t_k$, define
+\begin{equation}
+\delta C_j(t_k)=C_j^{\mathrm{QPU}}(t_k)-C_j^{\mathrm{ED}}(t_k),\qquad
+\epsilon_j(t_k)=|\delta C_j(t_k)|.
+\end{equation}
+The analysis also computes the site-resolved average difference and three nonnegative aggregate errors:
+\begin{align}
+\delta C(t_k)&=\frac1L\sum_{j=0}^{L-1}\delta C_j(t_k),\\
+\mathrm{MAE}(t_k)&=\frac1L\sum_{j=0}^{L-1}|\delta C_j(t_k)|,\\
+\mathrm{RMSE}(t_k)&=\sqrt{\frac1L\sum_{j=0}^{L-1}[\delta C_j(t_k)]^2},\\
+\epsilon_{\max}(t_k)&=\max_{0\le j<L}|\delta C_j(t_k)|.
+\end{align}
+A global maximum, $\max_{j,k}|\delta C_j(t_k)|$, global RMSE and per-site maximum errors are also saved. Note that positive and negative deviations can cancel in $\delta C(t)$; it is not interchangeable with MAE. These metrics quantify \emph{solver agreement}, not extrapolation to the thermodynamic limit.
+
+\section{Plots and results directory}
+After retrieving QPU data, figures can be regenerated without any network call:
+\begin{lstlisting}
+from qaptiva_mbl import plot_run
+plot_run(run_dir, kind="sites", sites=[0,1,2,3],
+         save="sites.pdf")
+plot_run(run_dir, kind="average", save="average.pdf")
+plot_run(run_dir, kind="error", save="errors.pdf")
+plot_run(run_dir, kind="site_error", sites=[0,1],
+         save="site_errors.pdf")
+\end{lstlisting}
+Optional arguments include \texttt{log\_time=True} and \texttt{overlay\_ed=True}. The function returns a Matplotlib figure for customization. In ED-only mode, the notebook plots the saved ED arrays directly.
+
+\begin{lstlisting}[language={}]
+runs/imbrie_L8_<unique-id>/
+    run.json          # run configuration, bitstring, job ID, status
+    sample.npz        # exact fields, bond couplings, initial spins
+    qpu_results.npz   # time, local magnetization and correlators
+    ed_results.npz    # time and ED correlators
+    comparison.npz    # signed/absolute differences and summaries
+\end{lstlisting}
+Only files produced by completed stages exist. The result arrays are indexed as $[j,k]$ for site $j$ and observation time $t_k$.
+
+\section{Reliability notes and status}
+\begin{itemize}
+\item \textbf{Time alignment:} comparison rejects mismatched observation grids. ED must use the stored QPU times.
+\item \textbf{Observable order:} site 0 is read from \texttt{value\_data}; remaining sites are read from \texttt{values\_data} in order.
+\item \textbf{Reproducibility:} full-precision random arrays and the initial bitstring are saved before submission; job metadata is retained in \texttt{run.json}.
+\item \textbf{Security:} never store credentials in source, notebooks, run metadata or Git.
+\item \textbf{Validation status:} local tests and mock retrieval pass; check live Qaptiva submission and retrieval against the intended server.
+\end{itemize}
+
+\noindent\textbf{References:} \href{https://qlm.bull.com/qlm/notebooks/tutorials/analog_simulations/overview.html}{Qaptiva analog simulation overview} \;\textbar\;
+\href{https://qlm.bull.com/qlm/notebooks/tutorials/analog_simulations/aqpu_getting_started.html}{Getting started} \;\textbar\;
+\href{https://qlm.bull.com/qlm/notebooks/tutorials/schedule_arithmetic.html}{Schedules}.\\
+\textbf{Project:} \url{https://github.com/abdpdn/qaptiva-mbl}
+
+\end{document}

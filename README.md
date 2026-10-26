@@ -1,46 +1,95 @@
 # qaptiva-mbl
 
-**Minimal, reproducible spin-chain MBL dynamics with Qaptiva AnalogQPU and independent exact diagonalization.**
+**Reproducible many-body-localization dynamics with Qaptiva AnalogQPU and independent exact diagonalization (ED).**
 
-A small Python package designed for researchers working on the Imbrie (random transverse-field Ising) and random-field XXZ chains. Its primary interface is the Jupyter notebook at [`notebooks/MBL_Simulation.ipynb`](notebooks/MBL_Simulation.ipynb). A short PDF manual is included at [`docs/User_Guide.pdf`](docs/User_Guide.pdf).
+`qaptiva-mbl` is a minimal Python package for the **Imbrie** and **random-field XXZ** chains. It prepares and saves disorder realizations, submits analog-simulation jobs, retrieves site-resolved magnetizations, reconstructs autocorrelators, and compares them with independently computed NumPy/SciPy ED results.
 
-## Scope (v0.1.0)
+The primary interface is [`notebooks/MBL_Simulation.ipynb`](notebooks/MBL_Simulation.ipynb). The [four-page PDF user guide](docs/User_Guide.pdf) contains professionally typeset equations; its editable [LaTeX source](docs/User_Guide.tex) is also provided.
 
-- Imbrie and random-field XXZ spin-1/2 chains; open or periodic boundaries.
-- User-selected parameters, disorder seed, and Néel or random **Z-basis product states**.
-- Qaptiva `AnalogQPU` jobs; saved job IDs and full-precision disorder/initial-state arrays.
-- Adaptive `error_control=True` (tolerances only) **or** fixed `error_control=False` (required `nsteps`).
-- Independent manual NumPy/SciPy ED, with dense diagonalization or sparse Krylov propagation.
-- `C_j(t) = s_j <Z_j(t)>`, the site average, and QPU-vs-ED numerical errors.
-- Retrieve once, then plot/replot without connecting to Qaptiva.
+> **Version 0.1.0.** Local numerical tests and simulated QLMaaS result parsing are checked. Actual remote submission and retrieval still require validation against the intended Qaptiva server.
 
-This first release handles **one disorder realization per run**. It does not exploit U(1) symmetry for XXZ; both backends represent the full `2**L` spin Hilbert space. It does not implement entropy, eigenstate observables, automated disorder averaging, or distributed job orchestration.
+## Features
 
-## Hamiltonian conventions
+- Two Hamiltonians: Imbrie and random-field XXZ; OBC or PBC.
+- User-selected length, couplings, disorder strength and seed, and Néel or random $Z$-basis product states.
+- Adaptive AnalogQPU integration using accuracy tolerances **without** `nsteps`, or fixed-step integration **with** `nsteps`.
+- Full-precision storage of disorder arrays, initial state, job ID and run metadata.
+- Independent manual ED via dense diagonalization or sparse Krylov propagation.
+- Site-resolved autocorrelators, site averages, ED–QPU differences and error plots.
+- Separate submission, retrieval, analysis and plotting, so existing jobs can be replotted without rerunning them.
 
-All indices are **0-based**, `Z|0> = +|0>`, and site 0 is the leftmost character of `psi_0`.
+For now, each run contains **one disorder realization**. The full $2^L$ Hilbert space is used; $U(1)$-resolved XXZ computations, automated disorder averaging, and additional observables are not part of this release.
 
-**Imbrie (Pauli operators):**
+## Hamiltonians and conventions
 
-```text
-H = sum_<i,j> Delta_ij Z_i Z_j + sum_i [h_i Z_i + Gamma X_i]
-Delta_ij ~ Uniform(delta_min, delta_max)
-h_i ~ Uniform(-h0, h0)
-```
+We use $\hbar=1$, sites $j=0,\ldots,L-1$, and Pauli matrices $X_j=\sigma_j^x$, $Y_j=\sigma_j^y$, $Z_j=\sigma_j^z$. The set of nearest-neighbor bonds is
 
-**Random-field XXZ (spin-1/2 operators `S^alpha = sigma^alpha / 2`):**
+$$
+\mathcal{B}_{\mathrm{OBC}}=\{(j,j+1):0\le j<L-1\},\qquad
+\mathcal{B}_{\mathrm{PBC}}=\mathcal{B}_{\mathrm{OBC}}\cup\{(L-1,0)\}.
+$$
 
-```text
-H = sum_<i,j> [Jxy (Sx_i Sx_j + Sy_i Sy_j) + Jz Sz_i Sz_j]
-    + sum_i h_i Sz_i
-h_i ~ Uniform(-h0, h0)
-```
+OBC supports $L\ge2$ and PBC supports $L\ge3$ in this implementation.
 
-For PBC, one closing bond `(L-1, 0)` is added; minimum `L=3`. For OBC, bonds are `(0,1), ..., (L-2,L-1)`. The random bond array in the Imbrie model and site fields are stored in `sample.npz` at their original floating-point precision. A random initial state uses a random stream independent of disorder, so changing `initial_state` does not change the Hamiltonian for a fixed seed.
+### Imbrie model (Pauli normalization)
+
+$$
+\boxed{H_{\mathrm I}=\sum_{(i,j)\in\mathcal B}\Delta_{ij}Z_iZ_j+
+\sum_{j=0}^{L-1}\big(h_j Z_j+\Gamma X_j\big)}
+$$
+
+with independent random parameters
+
+$$
+\Delta_{ij}\sim\mathcal U(\Delta_{\min},\Delta_{\max}),\qquad
+h_j\sim\mathcal U(-h_0,h_0).
+$$
+
+The parameters are `gamma`, `delta_min`, `delta_max` and `h0`. **No $1/2$ factors** multiply the Pauli operators in this model.
+
+### Random-field XXZ (spin-$\tfrac12$ normalization)
+
+Using $S_j^\alpha=\sigma_j^\alpha/2$ and $h_j\sim\mathcal U(-h_0,h_0)$,
+
+$$
+\boxed{H_{\mathrm{XXZ}}=\sum_{(i,j)\in\mathcal B}
+\left[J_{xy}(S_i^xS_j^x+S_i^yS_j^y)+J_zS_i^zS_j^z\right]
++\sum_j h_jS_j^z}.
+$$
+
+The equivalent Pauli representation used internally is
+
+$$
+H_{\mathrm{XXZ}}=\sum_{(i,j)\in\mathcal B}
+\left[\frac{J_{xy}}4(X_iX_j+Y_iY_j)+\frac{J_z}4 Z_iZ_j\right]
++\frac12\sum_j h_j Z_j.
+$$
+
+Set `jxy`, `jz` and `h0` in `RunConfig`. Both the QPU job and ED Hamiltonian use the **same coefficients and saved disorder arrays**.
+
+## Initial states and observables
+
+The initial state $|\psi_0\rangle$ is a computational-basis product state with $s_j\in\{+1,-1\}$,
+
+$$
+Z_j|\psi_0\rangle=s_j|\psi_0\rangle.
+$$
+
+Choose `initial_state="neel"` for $s_j=(-1)^j$, or `initial_state="random"` for independent random spins $s_j=\pm1$. In the submitted bitstring, $s_j=+1$ corresponds to `0` and $s_j=-1$ to `1`; **site 0 is the leftmost bit**. Independent random streams preserve the same disorder realization when switching the initial-state type at fixed seed.
+
+For $|\psi(t)\rangle=e^{-iHt}|\psi_0\rangle$ and $Z_j(t)=e^{iHt}Z_je^{-iHt}$, the site-resolved product-state autocorrelator is
+
+$$
+\boxed{C_j(t)=\langle\psi_0|Z_j(t)Z_j|\psi_0\rangle
+=s_j\langle\psi(t)|Z_j|\psi(t)\rangle},\qquad
+\boxed{C(t)=\frac1L\sum_{j=0}^{L-1}C_j(t)}.
+$$
+
+The package submits **unweighted** local $Z_j$ observables, then multiplies their returned expectation values by the saved $s_j$. For ideal evolution, $C_j(0)=1$. The single-state correlator is not generally the infinite-temperature trace correlator $2^{-L}\operatorname{Tr}[Z_j(t)Z_j]$.
 
 ## Installation
 
-**Python 3.10+** and NumPy, SciPy, and Matplotlib are required. From the repository root:
+Python 3.10+ is required. From the repository root:
 
 ```bash
 python -m pip install -e ".[notebook,test]"
@@ -48,104 +97,128 @@ python -m pytest -q
 jupyter notebook notebooks/MBL_Simulation.ipynb
 ```
 
-The proprietary **Qaptiva / QLMaaS** packages (`qat`, `qlmaas`) and access credentials are **not** bundled or installed by pip. Remote job submission and retrieval must run within an environment where those packages and your server access are already configured. The ED-only example and tests work without them.
-
-If you don't have Qaptiva access, try:
+The proprietary Qaptiva components (`qat`, `qlmaas`) and authenticated server access must be available in your environment **only for remote submission/retrieval**. They are not bundled with the package. To run an offline ED example without any remote connection:
 
 ```bash
 python examples/offline_ed.py
 ```
 
-## Typical workflow
+## Example: prepare, submit, retrieve, compare and plot
 
 ```python
 from qaptiva_mbl import (
     RunConfig, prepare_run, submit_run, retrieve_run,
-    run_ed, compare_run, plot_run
+    run_ed, compare_run, plot_run,
 )
 
-# 1. Prepare a reproducible realization; no remote calls yet.
+# Configure one Hamiltonian realization and initial state.
 cfg = RunConfig(
-    model="imbrie", L=8, boundary="pbc", seed=4011652654,
-    initial_state="neel", h0=3.5, gamma=1.0,
-    delta_min=0.8, delta_max=1.2, tmax=100,
-    error_control=True, nsteps=None, abs_tol=1e-8, rel_tol=1e-8,
-    use_gpu=False,
+    model="imbrie",                # "imbrie" or "xxz"
+    L=8, boundary="pbc", seed=12345,
+    initial_state="neel",          # "neel" or "random"
+    gamma=1.0, delta_min=0.8, delta_max=1.2, h0=3.5,
+    # For XXZ, set jxy and jz as desired.
+    tmax=100.0,
+    error_control=True, nsteps=None,
+    abs_tol=1e-8, rel_tol=1e-8, use_gpu=False,
 )
 run_dir = prepare_run(cfg, root="runs")
 
-# 2. Submit once on a Qaptiva installation, recording the returned job_id.
+# Remote stages (run within your configured Qaptiva environment).
 job_id = submit_run(run_dir)
-print(job_id, run_dir)
+times, C_qpu = retrieve_run(run_dir, host="YOUR-QLMAAS-HOST")
 
-# 3. Retrieve now or days later using this saved run directory.
-#    The password login is performed by QLMaaS, never stored in run.json.
-times, correlators = retrieve_run(run_dir, host="YOUR-QLMAAS-HOST")
+# Independent ED at the exact returned QPU timestamps.
+times, C_ed = run_ed(run_dir, max_L=12)
+metrics = compare_run(run_dir)
+print(metrics["global_max_absolute_error"])
 
-# 4. Compare against independent ED on precisely those same times.
-run_ed(run_dir, max_L=12)
-print(compare_run(run_dir))
-
-# 5. Plot saved observables (no remote call).
-plot_run(run_dir, kind="sites", sites=[0, 1, 2, 3], save="sites.png")
-plot_run(run_dir, kind="average", save="average.png")
-plot_run(run_dir, kind="error", save="errors.png")
-plot_run(run_dir, kind="site_error", sites=[0, 2], save="site_errors.png")
+# Analysis and plotting use saved local data only.
+plot_run(run_dir, kind="sites", sites=[0, 1, 2, 3], save="sites.pdf")
+plot_run(run_dir, kind="average", save="average.pdf")
+plot_run(run_dir, kind="error", save="errors.pdf")
+plot_run(run_dir, kind="site_error", sites=[0, 1], save="site_errors.pdf")
 ```
 
-**Fixed-step integration:** replace the integrator arguments with `error_control=False, nsteps=1000`. Do not supply `nsteps` in adaptive mode. The adaptive solver is the Dormand-Prince Runge-Kutta DP5 implementation described by the user's Qaptiva setup; the QPU chooses internal integration steps using `abs_tol` / `rel_tol`. A fixed-step job requires `nsteps`. **Returned observable timestamps** are loaded from Qaptiva, not guessed from the solver step count.
-
-**ED without Qaptiva:** prepare a run, then specify `times` explicitly:
+For a **purely offline** ED run, skip both remote stages and provide an explicit time grid:
 
 ```python
 import numpy as np
-run_dir = prepare_run(RunConfig(L=6, tmax=10))
-times, C = run_ed(run_dir, times=np.linspace(0, 10, 101))
+from qaptiva_mbl import RunConfig, prepare_run, run_ed
+run_dir = prepare_run(RunConfig(model="xxz", L=8, initial_state="neel"))
+times, C_ed = run_ed(run_dir, times=np.linspace(0, 100, 201))
 ```
 
-## Saved run structure
+### Integrator options
 
-Every `prepare_run` creates a unique run folder. All the files below are written into **one folder** (no external registry is needed):
+| Mode | Input parameters | Meaning |
+|---|---|---|
+| Adaptive | `error_control=True`, `nsteps=None`, `abs_tol`, `rel_tol` | Adaptive Dormand–Prince Runge–Kutta (DP5); internal step count is selected using error estimates. |
+| Fixed-step | `error_control=False`, `nsteps=1000` (example) | Explicit number of integration steps; tolerances are not forwarded. |
+
+**Never supply `nsteps` for adaptive integration.** Internal solver steps and output timestamps are distinct; retrieval reads the actual time keys in the QPU result. `use_gpu` controls the optional QPU GPU setting.
+
+## ED benchmarking and numerical errors
+
+Manual ED represents $H$ in the full $2^L$ basis. `method="dense"` performs Hermitian diagonalization; `method="krylov"` propagates the state with sparse matrix exponentials; `method="auto"` selects dense for $L\le9$ and Krylov otherwise. `run_ed()` uses `max_L=12` by default to limit resources, but it may be changed explicitly.
+
+For matched sites, disorder, initial state, and times $t_k$, the signed and absolute differences are
+
+$$
+\delta C_j(t_k)=C_j^{\mathrm{QPU}}(t_k)-C_j^{\mathrm{ED}}(t_k),\qquad
+\epsilon_j(t_k)=|\delta C_j(t_k)|.
+$$
+
+The package saves the time-dependent site averages and error metrics
+
+$$
+\begin{aligned}
+\delta C(t_k)&=\frac1L\sum_j\delta C_j(t_k),\\
+\mathrm{MAE}(t_k)&=\frac1L\sum_j |\delta C_j(t_k)|,\\
+\mathrm{RMSE}(t_k)&=\sqrt{\frac1L\sum_j[\delta C_j(t_k)]^2},\\
+\epsilon_{\max}(t_k)&=\max_j |\delta C_j(t_k)|.
+\end{aligned}
+$$
+
+It also reports global and per-site maximum absolute errors and global RMSE. Signed deviations may cancel in $\delta C(t)$, so it differs from the average absolute error. The difference between ED and QPU is a **numerical solver discrepancy**, not an error bar for the thermodynamic limit.
+
+## Data files and plotting
+
+Each `prepare_run()` creates one uniquely named folder. Files appear as the respective stages complete:
 
 ```text
-runs/imbrie_L8_<unique-id>/
-    run.json          # config, timestamp, status, remote job ID, bitstring
-    sample.npz        # full precision delta bonds, h_i fields, initial Z spins
-    qpu_results.npz   # times, magnetization[L,T], correlator[L,T], average[T]
-    ed_results.npz    # times, correlator[L,T], average[T]
-    comparison.npz    # signed/absolute error[L,T], RMSE[T], etc.
+runs/imbrie_L8_<run-id>/
+├── run.json          # model parameters, initial bitstring, job ID, status
+├── sample.npz        # full-precision disorder couplings, fields and spins
+├── qpu_results.npz   # times, magnetization[L,T], correlator[L,T], average[T]
+├── ed_results.npz    # times, correlator[L,T], average[T]
+└── comparison.npz    # signed/absolute errors and aggregate metrics
 ```
 
-Only files relevant to steps already completed are present. The `run.json` path is portable: it does **not** embed user-specific machine paths, credentials, or hardcoded server addresses. `submission_unconfirmed` indicates an exception during submission; check the server job list before starting a new run to avoid duplicate remote jobs.
+The retrieval adapter follows the submitted order: site 0 is in `result.value_data` and sites $1,\ldots,L-1$ are in `result.values_data`. Time-grid consistency is checked. Never generate new random arrays independently when benchmarking the same remote job.
 
-## ED comparison
+`plot_run()` supports `kind="sites"`, `"average"`, `"error"`, and `"site_error"`, site selection (`sites=[0,2]`), logarithmic time (`log_time=True`) and PNG/PDF/SVG output via `save=`. Plots depend on locally saved arrays, not a Qaptiva connection. In ED-only mode, the notebook demonstrates plots directly from the ED arrays.
 
-For an initial Z-basis product state with spin `s_j=+1` or `-1`,
+## Repository structure
 
 ```text
-C_j(t) = s_j <psi(t)| Z_j |psi(t)>
-C(t)   = (1/L) sum_j C_j(t)
-Delta_j(t) = C_j^AnalogQPU(t) - C_j^ED(t)
+qaptiva-mbl/
+├── src/qaptiva_mbl/       # physical models, QPU interface, ED, storage, plots
+├── notebooks/             # MBL_Simulation.ipynb
+├── docs/                  # User_Guide.pdf and User_Guide.tex
+├── examples/              # offline_ed.py
+├── tests/                 # unit and workflow tests
+├── .github/workflows/     # automated tests
+├── pyproject.toml
+├── requirements.txt
+├── LICENSE
+└── README.md
 ```
 
-The comparison additionally computes `|Delta_j|`, site-mean absolute error, site-RMSE, site-maximum absolute error as functions of time, and global error statistics. **Do not compare solutions built from independently regenerated random numbers.** The package always reads the identical saved disorder arrays and bitstring in both backends. The error shown is a *solver difference*, not an error bound against the thermodynamic limit.
+## Validation and references
 
-Use `run_ed(..., method="dense")` to diagonalize once, or `method="krylov"` for sparse propagation. The default selects dense when `L<=9`. ED defaults to a conservative `max_L=12`; the user may increase this explicitly at their own memory/time cost. Dense diagonalization scales much worse than Krylov evolution.
+Offline tests check Hamiltonian matrices, Hermiticity, XXZ conservation of total $S^z$, dense/Krylov agreement, adaptive/fixed-step configuration, QPU observable order, mocked result parsing, plotting, and numerical error metrics. Run `python -m pytest -q` after installation. **Live AnalogQPU behavior requires testing in the actual connected environment.**
 
-## Qaptiva API compatibility
+Qaptiva documentation: [analog overview](https://qlm.bull.com/qlm/notebooks/tutorials/analog_simulations/overview.html), [getting started](https://qlm.bull.com/qlm/notebooks/tutorials/analog_simulations/aqpu_getting_started.html), and [schedules](https://qlm.bull.com/qlm/notebooks/tutorials/schedule_arithmetic.html).
 
-The remote adapter follows the **working user-provided QLMaaS examples**:
-
-- `from qat.core import Observable, Term, Schedule`
-- `from qlmaas.qpus import AnalogQPU`
-- `schedule.to_job(job_type="OBS", psi_0=..., observable=Observable.z(0,L), observables=[Observable.z(i,L) for i in range(1,L)])`
-- `result = QLMaaSConnection(...).get_result(job_id)`
-- `result.value_data` is site 0; `result.values_data[k]` is site `k+1`.
-
-API references: [Qaptiva analog overview](https://qlm.bull.com/qlm/notebooks/tutorials/analog_simulations/overview.html), [analog getting started](https://qlm.bull.com/qlm/notebooks/tutorials/analog_simulations/aqpu_getting_started.html), [schedule basics](https://qlm.bull.com/qlm/notebooks/tutorials/schedule_arithmetic.html).
-
-**Validation status:** Python tests check Hamiltonians against explicit Kronecker matrices, Hermiticity, XXZ magnetization conservation, dense vs Krylov time evolution, adaptive/fixed-step keyword routing, job-observable order, local result parsing, plotting, and ED/QPU comparisons using simulated QLMaaS-shaped results. Actual remote submission and retrieval require an accessible Qaptiva server and must be smoke-tested there.
-
-## Development and contribution
-
-Run `python -m pytest -q` before opening a pull request. Keep new physics in `models.py` and `ed.py`, Qaptiva-specific imports in `submit.py`/`retrieve.py`, and notebook cells short. Do not commit job data, access tokens, or passwords. Review [`LICENSE`](LICENSE) (MIT) before public release if a different license is desired.
+Contributions are welcome. Never commit credentials, tokens, or generated run data. See the [MIT License](LICENSE).

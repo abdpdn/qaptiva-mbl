@@ -1,4 +1,4 @@
-"""Independent manual ED: sparse Pauli Hamiltonian, no QuSpin/QuTiP.
+"""Independent manual ED using sparse Pauli Hamiltonians.
 
     Computational basis convention: site 0 is the leftmost bit.
     |0> has sigma_z=+1 and |1> has sigma_z=-1.

@@ -85,7 +85,7 @@ $$
 \boxed{C(t)=\frac1L\sum_{j=0}^{L-1}C_j(t)}.
 $$
 
-The package submits **unweighted** local $Z_j$ observables, then multiplies their returned expectation values by the saved $s_j$. For ideal evolution, $C_j(0)=1$. The single-state correlator is not generally the infinite-temperature trace correlator $2^{-L}\operatorname{Tr}[Z_j(t)Z_j]$.
+The package submits **unweighted** local $Z_j$ observables, then multiplies their returned expectation values by the saved $s_j$. For ideal evolution, $C_j(0)=1$. The single-state correlator is not generally the infinite-temperature trace correlator $2^{-L}\mathrm{Tr}[Z_j(t)Z_j]$.
 
 ## Installation
 
